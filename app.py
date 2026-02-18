@@ -27,14 +27,14 @@ ticker_themes = {
 # 2. 전역 데이터 로드
 # ============================================================
 @st.cache_data(ttl=3600)
-def load_data():
+def load_data(tickers):
     end_date = datetime.today()
     start_date = end_date - relativedelta(years=20)
-    df = yf.download(all_tickers, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), progress=False)
+    df = yf.download(tickers, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), progress=False)
     return df
 
 with st.spinner('실시간 주가 데이터를 불러오는 중입니다...'):
-    df_raw = load_data()
+    df_raw = load_data(all_tickers)
 
 if isinstance(df_raw.columns, pd.MultiIndex):
     close_prices = df_raw['Close']
