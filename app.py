@@ -81,4 +81,4 @@ for i, ticker in enumerate(tickers):
         ax.grid(True, linestyle='--', alpha=0.3)
         st.pyplot(fig)
         
-        st.divider() # 카드 구분선
+        st.markdown("---") # 카드 구분선 (모든 버전에서 호환되는 방식으로 변경!)
