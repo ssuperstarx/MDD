@@ -13,13 +13,14 @@ st.set_page_config(page_title="종합 투자 대시보드", page_icon="📊", la
 st.title("📊 통합 투자 대시보드")
 st.markdown("MDD 기반의 하락장 모니터링과 RAI 지표 기반의 자동 리밸런싱 시그널을 확인하세요.")
 
-tickers_mdd = ["QQQ", "SPY", "IWM", "HYG", "LQD", "XLY", "XLP"]
+tickers_mdd = ["QQQ", "SPY", "IWM", "HYG", "LQD", "XLY", "XLP", "MAGS", "QLD"]
 tickers_rebal = ["SPY", "QQQ", "IWM", "HYG", "LQD", "XLY", "XLP", "^VIX", "^VIX3M", "SHY"]
 all_tickers = list(set(tickers_mdd + tickers_rebal))
 
 ticker_themes = {
     "QQQ": "나스닥 100", "SPY": "S&P 500", "IWM": "러셀 2000",
-    "HYG": "하이일드 채권", "LQD": "투자등급 채권", "XLY": "경기소비재", "XLP": "필수소비재"
+    "HYG": "하이일드 채권", "LQD": "투자등급 채권", "XLY": "경기소비재", "XLP": "필수소비재",
+    "MAGS": "매그니피센트 7", "QLD": "나스닥 100 (2배)"
 }
 
 # ============================================================
