@@ -7,26 +7,34 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # ============================================================
-# 1. 페이지 및 기본 설정
+# 1. 페이지 및 기본 설정 (변경 금지 구역)
 # ============================================================
 st.set_page_config(page_title="종합 투자 대시보드", page_icon="📊", layout="wide")
 st.title("📊 통합 투자 대시보드")
 st.markdown("MDD 기반의 하락장 모니터링과 RAI 지표 기반의 자동 리밸런싱 시그널을 확인하세요.")
 
-tickers_mdd = ["QQQ", "SPY", "IWM", "HYG", "LQD", "XLY", "XLP", "MAGS", "QLD"]
+# --- [추가/수정] 새로운 자산(원자재, 반도체 지수, 암호화폐) 티커 반영 ---
+# 필라델피아 반도체 지수(SOX)는 ETF인 SOXX로 대체하거나 추종 가능. 암호화폐는 -USD 형태 사용.
+tickers_mdd = [
+    "QQQ", "SPY", "IWM", "HYG", "LQD", "XLY", "XLP", "MAGS", "QLD", "GLD", "SLV",
+    "SOXX", "BTC-USD", "ETH-USD", "SOL-USD" # 신규 추가 티커 4종
+]
 tickers_rebal = ["SPY", "QQQ", "IWM", "HYG", "LQD", "XLY", "XLP", "^VIX", "^VIX3M", "SHY"]
 all_tickers = list(set(tickers_mdd + tickers_rebal))
 
 ticker_themes = {
     "QQQ": "나스닥 100", "SPY": "S&P 500", "IWM": "러셀 2000",
     "HYG": "하이일드 채권", "LQD": "투자등급 채권", "XLY": "경기소비재", "XLP": "필수소비재",
-    "MAGS": "매그니피센트 7", "QLD": "나스닥 100 (2배)"
+    "MAGS": "매그니피센트 7", "QLD": "나스닥 100 (2배)", "GLD": "금 (Gold)", "SLV": "은 (Silver)", 
+    "SOXX": "반도체 지수", "BTC-USD": "비트코인 (BTC)", "ETH-USD": "이더리움 (ETH)", "SOL-USD": "리플 (XRP)",
+    "^VIX": "변동성 지수 (VIX)", "^VIX3M": "VIX 3개월", "SHY": "단기 국채 (1-3년)"
 }
+# -------------------------------------------------------------
 
 # ============================================================
 # 2. 전역 데이터 로드
 # ============================================================
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=900)
 def load_data(tickers):
     end_date = datetime.today()
     start_date = end_date - relativedelta(years=20)
@@ -44,11 +52,8 @@ else:
     close_prices = df_raw
 
 # ============================================================
-# 3. 화면 분할 (Tabs)
-# ============================================================
-# ------------------------------------------------------------
 # 3. 화면 분할 (Sidebar Navigation)
-# ------------------------------------------------------------
+# ============================================================
 st.sidebar.header("메뉴 선택")
 page = st.sidebar.radio(
     "페이지 선택", 
@@ -62,50 +67,59 @@ page = st.sidebar.radio(
 # [PAGE 1] 기존 ETF 대시보드
 # ------------------------------------------------------------
 if page == "📊 1. ETF 하락장 모니터링 (MDD)":
-    cols = st.columns(3)
-    for i, ticker in enumerate(tickers_mdd):
-        if ticker not in close_prices.columns: continue
-        prices = close_prices[ticker].dropna()
-        if prices.empty: continue
+    st.title("📊 1. ETF 하락장 모니터링 (MDD)")
+    st.markdown("전고점 대비 현재 낙폭을 확인하고 나만의 매수 기준을 점검하세요.")
+    
+    # 3개씩 묶어서 행(Row) 단위로 컬럼 생성
+    for i in range(0, len(tickers_mdd), 3):
+        cols = st.columns(3) 
         
-        roll_max_20y = prices.cummax()
-        drawdown_20y = (prices / roll_max_20y - 1.0) * 100
-        mdd_20y = drawdown_20y.min()
-        current_dd_20y = drawdown_20y.iloc[-1]
-        
-        is_peak = prices == roll_max_20y
-        peak_dates = prices[is_peak].index
-        last_peak = peak_dates[-1] if len(peak_dates) > 0 else prices.index[0]
-        ongoing_days = (prices.index[-1] - last_peak).days
-        
-        if current_dd_20y <= -20.0:
-            status, color = "🔴 물타기 구간 (적극 매수)", "red"
-        elif current_dd_20y <= -10.0:
-            status, color = "🟡 조정 구간 (분할 매수)", "orange"
-        else:
-            status, color = "🔵 안정 구간 (적립 유지)", "blue"
+        for j in range(3):
+            if i + j < len(tickers_mdd):
+                ticker = tickers_mdd[i + j]
+                # 암호화폐 등 주말 장이 열리는 자산군을 위해 완벽한 na 처리
+                prices = close_prices[ticker].dropna()
+                if prices.empty: continue
+                
+                # MDD 계산
+                roll_max = prices.cummax()
+                drawdown = (prices / roll_max - 1.0) * 100
+                mdd_val = drawdown.min()
+                current_dd = drawdown.iloc[-1]
+                
+                # 하락 지속 기간 계산
+                is_peak = prices == roll_max
+                last_peak_dt = prices[is_peak].index[-1]
+                ongoing_days = (prices.index[-1] - last_peak_dt).days
+                
+                # 상태 판별 (암호화폐/원자재 등은 변동성이 커서 기준선이 다를 수 있지만 일단 일괄 적용)
+                if current_dd <= -20.0:
+                    status, color = "🔴 물타기 구간 (적극 매수)", "red"
+                elif current_dd <= -10.0:
+                    status, color = "🟡 조정 구간 (분할 매수)", "orange"
+                else:
+                    status, color = "🔵 안정 구간 (적립 유지)", "blue"
 
-        with cols[i % 3]:
-            st.subheader(f"{ticker} - {ticker_themes.get(ticker, '')}")
-            st.markdown(f"**상태:** :{color}[{status}]")
-            
-            if current_dd_20y == 0:
-                st.metric(label="현재 하락률", value="✨ 전고점 갱신 중!")
-            else:
-                st.metric(label=f"현재 하락률 (마지막 고점: {last_peak.strftime('%y.%m.%d')} / {ongoing_days}일째)", 
-                          value=f"{current_dd_20y:.2f}%")
-            st.caption(f"역대 최대 낙폭(MDD): {mdd_20y:.2f}%")
-            
-            fig, ax = plt.subplots(figsize=(5, 2.5))
-            ax.plot(drawdown_20y.index, drawdown_20y, color='red', alpha=0.8, linewidth=1)
-            ax.fill_between(drawdown_20y.index, drawdown_20y, 0, color='red', alpha=0.2)
-            ax.axhline(0, color='black', linewidth=0.8)
-            ax.axhline(-20, color='blue', linestyle=':', linewidth=1.5)
-            ax.set_ylabel("Drawdown (%)", fontsize=8)
-            ax.tick_params(axis='both', which='major', labelsize=8)
-            ax.grid(True, linestyle='--', alpha=0.3)
-            st.pyplot(fig)
-            st.markdown("---")
+                with cols[j]:
+                    st.subheader(f"{ticker} - {ticker_themes[ticker]}")
+                    st.markdown(f"**상태:** :{color}[{status}]")
+                    
+                    if current_dd == 0:
+                        st.metric(label="현재 하락률", value="✨ 전고점 갱신 중!")
+                    else:
+                        st.metric(label=f"현재 하락률 (고점: {last_peak_dt.strftime('%y.%m.%d')} / {ongoing_days}일째)", 
+                                  value=f"{current_dd:.2f}%")
+                    
+                    # 차트 시각화
+                    fig, ax = plt.subplots(figsize=(5, 3))
+                    ax.plot(drawdown.index, drawdown, color='red', alpha=0.8, linewidth=1)
+                    ax.fill_between(drawdown.index, drawdown, 0, color='red', alpha=0.2)
+                    ax.axhline(0, color='black', linewidth=0.8)
+                    ax.axhline(-20, color='blue', linestyle=':', label='-20% 기준선')
+                    ax.set_ylabel("Drawdown (%)", fontsize=8)
+                    ax.grid(True, linestyle='--', alpha=0.3)
+                    st.pyplot(fig)
+                    st.markdown("---")
 
 # ------------------------------------------------------------
 # [PAGE 2] RAI 기반 동적 리밸런싱
@@ -113,14 +127,12 @@ if page == "📊 1. ETF 하락장 모니터링 (MDD)":
 elif page == "🔄 2. 포트폴리오 리밸런싱 시그널 (RAI)":
     st.markdown("### ⚙️ 리밸런싱 파라미터 및 성향 설정")
     
-    # UI에서 변수 및 투자 성향 입력받기 (4등분)
     col1, col2, col3, col4 = st.columns(4)
     port_val = col1.number_input("현재 포트폴리오 금액 ($)", min_value=100, value=10000, step=100)
     cur_q_weight = col2.number_input("현재 QQQ 비중 (0.0~1.0)", min_value=0.0, max_value=1.0, value=0.70, step=0.05)
     rebal_freq = col3.selectbox("리밸런싱 기준일", ["D (매일)", "W-FRI (주 1회 금요일)", "M (월말)"])
     rebal_freq_val = rebal_freq.split(" ")[0]
     
-    # 투자 성향 옵션 추가
     strategy = col4.selectbox(
         "💡 투자 성향 조절", 
         ["🛡️ 방어형 (하락 시 현금 80%)", "⚖️ 중립형 (기본, 하락 시 현금 60%)", "🔥 공격형 (하락 시 현금 40%)"], 
@@ -137,24 +149,20 @@ elif page == "🔄 2. 포트폴리오 리밸런싱 시그널 (RAI)":
         "cyc_def": +1, "small_big": +1, "trend_200": +1, "adx14": +1
     }
 
-    # ★ 개선점: 성향에 따른 동적 비중(Target Weight) 매핑 로직
     def quantile_to_weight(q: float, strat: str) -> float:
         if "방어형" in strat:
-            # 방어형: 점수가 낮을 때 주식 비중을 극단적으로 줄임 (현금 확보 우선)
             if q <= 0.10: return 0.20
             elif q <= 0.25: return 0.40
             elif q <= 0.50: return 0.60
             elif q <= 0.75: return 0.80
             else: return 1.00
         elif "공격형" in strat:
-            # 공격형: 최악의 하락장에서도 주식 비중을 60% 이상 유지 (수익 추구)
             if q <= 0.10: return 0.60
             elif q <= 0.25: return 0.70
             elif q <= 0.50: return 0.80
             elif q <= 0.75: return 0.90
             else: return 1.00
         else: 
-            # 중립형: 제공해주신 기본 로직
             if q <= 0.10: return 0.40
             elif q <= 0.25: return 0.55
             elif q <= 0.50: return 0.70
@@ -237,7 +245,6 @@ elif page == "🔄 2. 포트폴리오 리밸런싱 시그널 (RAI)":
     q_roll = rai.rolling(roll_win).apply(lambda x: (x <= x[-1]).mean(), raw=True)
     q = q_roll.fillna(q_exp)
     
-    # 여기서 선택한 성향(strategy)을 함수에 전달합니다.
     target_w_series = q.apply(lambda x: quantile_to_weight(x, strategy))
 
     rai_today = rai.iloc[-1]
@@ -312,7 +319,6 @@ elif page == "🔄 2. 포트폴리오 리밸런싱 시그널 (RAI)":
         st.caption("자동 산출된 목표 비중 (%) 추이")
         st.line_chart(target_w_series.reindex(plot_days) * 100)
 
-    # ★ 추가된 원리 설명 구간
     st.markdown("---")
     st.markdown("### 🧠 AI 목표 비중(Target Weight) 산출 원리")
     st.markdown("""
@@ -324,4 +330,3 @@ elif page == "🔄 2. 포트폴리오 리밸런싱 시그널 (RAI)":
     4. **최근 2년 내 상대 순위(백분위) 평가**: 과거 10년 전의 낡은 데이터가 아니라, **최근 2년(약 500거래일) 동안의 분위기 속에서 오늘의 RAI 점수가 상위 몇 %에 위치하는지(백분위)**를 계산하여 단기 폭락/급등장에 유연하게 대처합니다.
     5. **목표 비중 매핑 (성향 반영)**: 산출된 백분위(%) 위치에 따라 포트폴리오 비중을 5단계로 조절합니다. 상단에서 설정하신 **[투자 성향]**에 따라 하락장(하위 10% 미만) 진입 시 방어 수준(안전자산 최대 확보량)이 다르게 맵핑됩니다.
     """)
-    
