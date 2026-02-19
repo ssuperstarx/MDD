@@ -35,21 +35,11 @@ ticker_themes = {
 # 2. 전역 데이터 로드
 # ============================================================
 @st.cache_data(ttl=900)
-def load_data(tickers):
+def load_data(tickers, years=20):
     end_date = datetime.today()
-    start_date = end_date - relativedelta(years=20)
-    df = yf.download(tickers, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), progress=False)
+    start_date = end_date - relativedelta(years=years)
+    df = yf.download(tickers, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'), progress=False, auto_adjust=True)
     return df
-
-with st.spinner('실시간 주가 데이터를 불러오는 중입니다...'):
-    df_raw = load_data(all_tickers)
-
-if isinstance(df_raw.columns, pd.MultiIndex):
-    close_prices = df_raw['Close']
-    high_prices = df_raw['High']
-    low_prices = df_raw['Low']
-else:
-    close_prices = df_raw
 
 # ============================================================
 # 3. 화면 분할 (Sidebar Navigation)
@@ -63,12 +53,38 @@ page = st.sidebar.radio(
     key="main_navigation"
 )
 
+st.sidebar.markdown("---")
+st.sidebar.header("데이터 설정")
+lookback_years = st.sidebar.slider("과거 데이터 조회 기간 (년)", min_value=1, max_value=30, value=20)
+
+with st.spinner(f'최근 {lookback_years}년의 주가 데이터를 불러오는 중입니다...'):
+    df_raw = load_data(all_tickers, lookback_years)
+
+if isinstance(df_raw.columns, pd.MultiIndex):
+    close_prices = df_raw['Close']
+    high_prices = df_raw['High']
+    low_prices = df_raw['Low']
+else:
+    close_prices = df_raw
+
+# (Moved to section 2)
+
 # ------------------------------------------------------------
 # [PAGE 1] 기존 ETF 대시보드
 # ------------------------------------------------------------
 if page == "📊 1. ETF 하락장 모니터링 (MDD)":
     st.title("📊 1. ETF 하락장 모니터링 (MDD)")
-    st.markdown("전고점 대비 현재 낙폭을 확인하고 나만의 매수 기준을 점검하세요.")
+    st.info(f"📅 **조회 기간:** 최근 {lookback_years}년 (시작: {(datetime.today() - relativedelta(years=lookback_years)).strftime('%Y-%m-%d')})")
+    
+    st.markdown("""
+    ### 🔔 상태 판별 기준 (MDD)
+    | 상태 | 상세 기준 | 투자전략 |
+    | :--- | :--- | :--- |
+    | 🔴 **물타기 구간** | **MDD -20% 이하** | 적극 매수 및 비중 확대 |
+    | 🟡 **조정 구간** | **MDD -10% 이하** | 분할 매수 진입 |
+    | 🔵 **안정 구간** | **MDD -10% 초과** | 기존 적립 및 관망 유지 |
+    """)
+    st.markdown("---")
     
     # 3개씩 묶어서 행(Row) 단위로 컬럼 생성
     for i in range(0, len(tickers_mdd), 3):
@@ -102,13 +118,25 @@ if page == "📊 1. ETF 하락장 모니터링 (MDD)":
 
                 with cols[j]:
                     st.subheader(f"{ticker} - {ticker_themes[ticker]}")
+                    current_price = prices.iloc[-1]
+                    prev_price = prices.iloc[-2] if len(prices) > 1 else current_price
+                    daily_return = (current_price / prev_price - 1) * 100
+                    return_color = "red" if daily_return > 0 else "blue" if daily_return < 0 else "gray"
+                    
                     st.markdown(f"**상태:** :{color}[{status}]")
+                    st.markdown(f"**현재가:** ${current_price:,.2f} (:{return_color}[{daily_return:+.2f}%])")
                     
                     if current_dd == 0:
-                        st.metric(label="현재 하락률", value="✨ 전고점 갱신 중!")
+                        st.markdown(f"""
+                            <div style="font-size:14px; color:gray; margin-bottom:2px;">현재 하락률</div>
+                            <div style="font-size:20px; font-weight:bold;">✨ 전고점 갱신 중!</div>
+                        """, unsafe_allow_html=True)
                     else:
-                        st.metric(label=f"현재 하락률 (고점: {last_peak_dt.strftime('%y.%m.%d')} / {ongoing_days}일째)", 
-                                  value=f"{current_dd:.2f}%")
+                        label_text = f"현재 하락률 (고점: {last_peak_dt.strftime('%y.%m.%d')} / {ongoing_days}일째)"
+                        st.markdown(f"""
+                            <div style="font-size:14px; color:gray; margin-bottom:2px;">{label_text}</div>
+                            <div style="font-size:20px; font-weight:bold; color:{color};">{current_dd:.2f}%</div>
+                        """, unsafe_allow_html=True)
                     
                     # 차트 시각화
                     fig, ax = plt.subplots(figsize=(5, 3))
